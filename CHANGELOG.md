@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/VinylStage/node-workflow-test/compare/node-test-project-v0.3.0...node-test-project-v0.3.1) (2025-12-29)
+
+
+### 🐛 Bug Fixes
+
+* resolve Docker build hang and optimize build process ([cff3087](https://github.com/VinylStage/node-workflow-test/commit/cff3087213e6dbe5ccb9954d7ee1db4abdb11c2b))
+
 ## [0.3.0](https://github.com/VinylStage/node-workflow-test/compare/node-test-project-v0.2.0...node-test-project-v0.3.0) (2025-12-29)
 
 
