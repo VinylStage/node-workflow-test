@@ -157,40 +157,59 @@ npm install --save typescript @types/node @types/react @types/react-dom
 
 ---
 
-### 시나리오 3: Release Workflow 테스트
+### 시나리오 3: Release Workflow 테스트 (Release Please v4)
 
 **목적**: Release 생성 시 프로덕션 빌드 및 배포
+
+**사전 준비**:
+- `release-please-config.json` 파일 존재 확인
+- `.release-please-manifest.json` 파일에 현재 버전 명시
+- `package.json`의 version이 manifest와 일치하는지 확인
 
 **단계**:
 
 ```bash
-# 1. develop 브랜치에 여러 커밋 추가
-git checkout develop
+# 1. main 브랜치에 Conventional Commits 추가
+git checkout main
 git commit --allow-empty -m "feat: 다크 모드 지원"
 git commit --allow-empty -m "fix: 레이아웃 버그 수정"
-git push origin develop
+git push origin main
 
-# 2. develop → main PR 생성 및 머지
-
-# 3. Release-Please가 Release PR 생성
+# 2. Release-Please가 자동으로 Release PR 생성
+# - release-please-config.json 기반으로 동작
 # - package.json의 version 자동 업데이트
-# - CHANGELOG 자동 생성
+# - CHANGELOG.md 자동 생성
 
-# 4. Release PR 머지
+# 3. Release PR 확인
+gh pr list
+# "chore(main): release X.X.X" 형태의 PR 확인
 
-# 5. GitHub Release 자동 생성
-# - release.yml workflow 실행
-# - 프로덕션 빌드
-# - 빌드 결과물 압축 및 업로드
+# 4. Release PR 내용 확인
+# - package.json 버전 변경사항
+# - CHANGELOG.md 업데이트
+# - .release-please-manifest.json 업데이트
+
+# 5. Release PR 머지
+gh pr merge [PR_NUMBER] --merge
+
+# 6. GitHub Release 자동 생성 확인
+gh release list
+
+# 7. Release workflow 실행 확인
+gh run list --workflow=release.yml
 ```
 
 **확인 사항**:
-- [ ] `package.json`에서 버전 추출 성공
+- [ ] Release Please가 올바른 버전을 계산 (Conventional Commits 기반)
+- [ ] `package.json`의 version이 자동 업데이트됨
+- [ ] `.release-please-manifest.json`이 업데이트됨
+- [ ] CHANGELOG.md가 생성되거나 업데이트됨
 - [ ] `REACT_APP_VERSION` 환경 변수로 버전 주입
 - [ ] 프로덕션 빌드 성공 (`NODE_ENV=production`)
 - [ ] 빌드 결과물 압축 (.tar.gz, .zip)
 - [ ] GitHub Release에 압축 파일 업로드
 - [ ] Git tag (v0.1.0) 생성
+- [ ] Docker 이미지 빌드 및 GHCR 푸시 성공
 
 ---
 
@@ -240,7 +259,82 @@ npx serve -s build
 
 ---
 
-### 시나리오 6: ESLint 검증 테스트
+### 시나리오 6: Docker 이미지 빌드 및 GHCR 테스트
+
+**목적**: Docker 이미지 로컬 빌드 및 GHCR 푸시 확인
+
+**로컬 테스트**:
+
+```bash
+# 1. Docker 이미지 빌드
+docker build -t node-test-project:dev .
+
+# 2. 빌드된 이미지 확인
+docker images | grep node-test-project
+
+# 3. 컨테이너 실행
+docker run -d -p 8080:80 --name test-app node-test-project:dev
+
+# 4. Health check 확인
+docker ps
+# STATUS 컬럼에서 "healthy" 확인
+
+# 5. 브라우저 테스트
+curl http://localhost:8080
+# 또는 브라우저에서 http://localhost:8080 접속
+
+# 6. 컨테이너 로그 확인
+docker logs test-app
+
+# 7. 컨테이너 정리
+docker stop test-app
+docker rm test-app
+```
+
+**GHCR 푸시 테스트** (Release 시 자동 실행):
+
+```bash
+# 1. Release 생성 (위의 시나리오 3 참조)
+
+# 2. Docker workflow 실행 확인
+gh run list --workflow=release.yml
+
+# 3. Workflow 상세 로그 확인
+gh run view [RUN_ID]
+
+# 4. GHCR에서 이미지 확인
+# https://github.com/YOUR_ORG/YOUR_REPO/pkgs/container/YOUR_REPO
+
+# 5. 이미지 pull 테스트
+docker pull ghcr.io/YOUR_ORG/YOUR_REPO:latest
+
+# 6. Pull한 이미지 실행
+docker run -p 8080:80 ghcr.io/YOUR_ORG/YOUR_REPO:latest
+
+# 7. 특정 버전 이미지 테스트
+docker pull ghcr.io/YOUR_ORG/YOUR_REPO:1.0.0
+docker run -p 8080:80 ghcr.io/YOUR_ORG/YOUR_REPO:1.0.0
+```
+
+**확인 사항**:
+- [ ] 로컬에서 Docker 이미지 빌드 성공
+- [ ] 멀티 스테이지 빌드로 이미지 크기 최적화 확인
+- [ ] nginx가 정상적으로 실행됨
+- [ ] Health check가 정상적으로 작동함
+- [ ] GHCR에 이미지 푸시 성공 (Release 시)
+- [ ] 여러 태그가 생성됨 (latest, 버전, major.minor, major)
+- [ ] 멀티 플랫폼 이미지 빌드 성공 (amd64, arm64)
+- [ ] GHCR에서 이미지 pull 및 실행 성공
+
+**Docker 이미지 태그 전략**:
+- `latest` - 가장 최신 릴리즈
+- `1.0.0` - 정확한 버전
+- `1.0` - major.minor 버전
+- `1` - major 버전만
+
+---
+
+### 시나리오 7: ESLint 검증 테스트
 
 **목적**: 코드 스타일 검증
 

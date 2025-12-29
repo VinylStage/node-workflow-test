@@ -8,8 +8,11 @@
 
 | Workflow | 파일명 | 트리거 | 설명 |
 |----------|--------|--------|------|
+| **Release Please** | `release-please.yml` | main 브랜치 푸시 | 자동 버전 관리 & 릴리즈 PR 생성 |
 | **PR Build & Test** | `pr-build.yml` | PR 생성/업데이트 | 빌드, 테스트, 린팅, 타입 체크 |
-| **Release** | `release.yml` | Release 생성 | 프로덕션 빌드 & NPM 배포 |
+| **Release** | `release.yml` | Release 생성 | 프로덕션 빌드, NPM 배포, Docker 이미지 빌드 |
+| **PR Checks** | `pr-checks.yml` | PR 생성/업데이트 | PR 메타데이터 검증 |
+| **Labels Sync** | `labels.yml` | labels.yml 변경 시 | GitHub 라벨 동기화 |
 
 ---
 
@@ -85,6 +88,59 @@ gh secret set NPM_TOKEN
 
 ## 📝 Workflow 상세 설명
 
+### Release Please (`release-please.yml`)
+
+**트리거**:
+- `main` 브랜치로의 푸시
+
+**실행 내용**:
+1. Conventional Commits 분석
+2. 버전 자동 계산 (semver 규칙)
+3. CHANGELOG.md 자동 생성/업데이트
+4. package.json 버전 자동 업데이트
+5. .release-please-manifest.json 업데이트
+6. 릴리즈 PR 자동 생성 또는 GitHub Release 생성
+
+**설정 파일**:
+- `release-please-config.json`: Release Please 설정
+- `.release-please-manifest.json`: 현재 버전 추적
+
+**Conventional Commits 규칙**:
+```bash
+# Minor 버전 증가 (1.0.0 → 1.1.0)
+git commit -m "feat: 새로운 기능 추가"
+
+# Patch 버전 증가 (1.0.0 → 1.0.1)
+git commit -m "fix: 버그 수정"
+
+# Major 버전 증가 (1.0.0 → 2.0.0)
+git commit -m "feat!: Breaking change가 포함된 기능"
+# 또는
+git commit -m "feat: API 변경
+
+BREAKING CHANGE: 기존 API와 호환되지 않습니다."
+```
+
+**커스터마이징**:
+```json
+// release-please-config.json
+{
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "package-name": "your-package-name",
+      "changelog-sections": [
+        {"type": "feat", "section": "✨ Features"},
+        {"type": "fix", "section": "🐛 Bug Fixes"}
+      ],
+      "extra-files": ["package.json"]
+    }
+  }
+}
+```
+
+---
+
 ### PR Build & Test (`pr-build.yml`)
 
 **트리거**:
@@ -139,6 +195,8 @@ gh secret set NPM_TOKEN
 - 수동 실행 (`workflow_dispatch`)
 
 **실행 내용**:
+
+**Job 1: build-and-release**
 1. Node 버전 자동 감지
 2. `package.json`에서 버전 추출
 3. Git tag와 버전 일치 확인 (경고만)
@@ -148,6 +206,19 @@ gh secret set NPM_TOKEN
 7. Release에 빌드 결과물 업로드
 8. NPM 배포 (NPM_TOKEN이 설정되고 `private: false`인 경우)
 
+**Job 2: docker-build-and-push** (Release 시에만 실행)
+1. Dockerfile을 사용하여 Docker 이미지 빌드
+2. 멀티 플랫폼 빌드 (linux/amd64, linux/arm64)
+3. Docker 메타데이터 추출 (태그, 레이블)
+4. GHCR(GitHub Container Registry)에 이미지 푸시
+5. 여러 태그로 이미지 태깅 (latest, 버전, major.minor, major)
+
+**Docker 이미지 태그**:
+- `ghcr.io/owner/repo:latest` - 최신 릴리즈
+- `ghcr.io/owner/repo:1.0.0` - 정확한 버전
+- `ghcr.io/owner/repo:1.0` - major.minor 버전
+- `ghcr.io/owner/repo:1` - major 버전만
+
 **환경 변수 주입**:
 ```yaml
 - name: Build project
@@ -155,6 +226,18 @@ gh secret set NPM_TOKEN
   env:
     REACT_APP_VERSION: ${{ steps.version.outputs.version }}
     REACT_APP_BUILD_TIME: ${{ github.event.repository.updated_at }}
+```
+
+**GHCR 이미지 사용법**:
+```bash
+# 최신 이미지 가져오기
+docker pull ghcr.io/owner/repo:latest
+
+# 특정 버전 가져오기
+docker pull ghcr.io/owner/repo:1.0.0
+
+# 실행
+docker run -p 8080:80 ghcr.io/owner/repo:latest
 ```
 
 ---
