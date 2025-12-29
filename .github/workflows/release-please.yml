@@ -50,37 +50,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Node 버전 설정
-      - name: Read Node version
-        id: node_version
-        run: |
-          if [ -f ".nvmrc" ]; then
-            NODE_VERSION=$(cat .nvmrc)
-            echo "Node version from .nvmrc: $NODE_VERSION"
-          else
-            NODE_VERSION="20"
-            echo "Using default Node version: $NODE_VERSION"
-          fi
-          echo "version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ steps.node_version.outputs.version }}
-          cache: 'npm'
-
-      # 의존성 설치 및 빌드
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build project
-        run: npm run build
-        env:
-          CI: true
-          NODE_ENV: production
-          REACT_APP_VERSION: ${{ needs.release-please.outputs.tag_name }}
-
-      # Docker 빌드 및 푸시
+      # Docker 빌드 및 푸시 (빌드는 Dockerfile 내에서 수행)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -109,9 +79,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            REACT_APP_VERSION=${{ needs.release-please.outputs.tag_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
 
       # Release에 Docker 이미지 정보 추가
       - name: Update release with Docker image info

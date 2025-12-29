@@ -1,18 +1,22 @@
 # Build stage
 FROM node:20-alpine AS builder
 
+# Build argument for version
+ARG REACT_APP_VERSION=dev
+
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install dependencies (including devDependencies for build)
+RUN npm ci
 
 # Copy source code
 COPY . .
 
-# Build the application
+# Build the application with version
+ENV REACT_APP_VERSION=$REACT_APP_VERSION
 RUN npm run build
 
 # Production stage
