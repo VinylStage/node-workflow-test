@@ -5,9 +5,15 @@ on:
     branches:
       - main
 
+env:
+  NODE_VERSION_FILE: '.nvmrc'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
 permissions:
   contents: write
   pull-requests: write
+  packages: write
 
 jobs:
   release-please:
@@ -22,6 +28,10 @@ jobs:
       - name: Run Release Please
         id: release
         uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
       - name: Output Release Info
         if: steps.release.outputs.release_created
@@ -29,3 +39,134 @@ jobs:
           echo "✅ Release created!"
           echo "Tag: ${{ steps.release.outputs.tag_name }}"
           echo "Version: ${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}"
+
+  build-and-push-docker:
+    name: Build and Push Docker Image
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Node 버전 설정
+      - name: Read Node version
+        id: node_version
+        run: |
+          if [ -f ".nvmrc" ]; then
+            NODE_VERSION=$(cat .nvmrc)
+            echo "Node version from .nvmrc: $NODE_VERSION"
+          else
+            NODE_VERSION="20"
+            echo "Using default Node version: $NODE_VERSION"
+          fi
+          echo "version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node_version.outputs.version }}
+          cache: 'npm'
+
+      # 의존성 설치 및 빌드
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build project
+        run: npm run build
+        env:
+          CI: true
+          NODE_ENV: production
+          REACT_APP_VERSION: ${{ needs.release-please.outputs.tag_name }}
+
+      # Docker 빌드 및 푸시
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
+            type=semver,pattern={{major}},value=${{ needs.release-please.outputs.tag_name }}
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      # Release에 Docker 이미지 정보 추가
+      - name: Update release with Docker image info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: '${{ needs.release-please.outputs.tag_name }}'
+            });
+
+            const imageUrl = `${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}`;
+            const version = '${{ needs.release-please.outputs.tag_name }}';
+
+            const additionalInfo = `
+
+            ## 🐳 Docker 이미지
+
+            이 릴리스의 Docker 이미지는 GitHub Container Registry에서 다운로드할 수 있습니다:
+
+            \`\`\`bash
+            docker pull ${imageUrl}:${version}
+            docker pull ${imageUrl}:latest
+            \`\`\`
+
+            ### 사용 방법
+
+            \`\`\`bash
+            # 이미지 다운로드
+            docker pull ${imageUrl}:${version}
+
+            # 컨테이너 실행
+            docker run -p 8080:80 ${imageUrl}:${version}
+
+            # 브라우저에서 http://localhost:8080 접속
+            \`\`\`
+
+            ### 이미지 정보
+            - Registry: GitHub Container Registry (ghcr.io)
+            - Repository: ${imageUrl}
+            - Tags: \`${version}\`, \`latest\`
+            - Platforms: linux/amd64, linux/arm64
+            `;
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              body: release.data.body + additionalInfo
+            });
+
+      - name: Output image info
+        run: |
+          echo "✅ Docker 이미지가 성공적으로 빌드되고 배포되었습니다!"
+          echo "Registry: ${{ env.REGISTRY }}"
+          echo "Image: ${{ env.IMAGE_NAME }}"
+          echo "Tags: ${{ steps.meta.outputs.tags }}"

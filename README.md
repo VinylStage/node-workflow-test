@@ -62,11 +62,18 @@ docker run -p 8080:80 ghcr.io/your-org/node-test-project:latest
 
 1. main 브랜치에 커밋 푸시 (Conventional Commits 형식)
 2. Release Please가 자동으로 릴리즈 PR 생성
-3. PR 머지 시 GitHub Release 자동 생성
-4. 릴리즈 시 자동으로:
-   - 프로덕션 빌드 아티팩트 생성 (.tar.gz, .zip)
-   - Docker 이미지 빌드 및 GHCR에 푸시
    - package.json 버전 자동 업데이트
+   - CHANGELOG.md 자동 생성/업데이트
+3. PR 머지 시 GitHub Release 자동 생성
+4. **Release Please workflow가 자동으로 계속 실행**:
+   - Docker 이미지 빌드 (멀티 플랫폼: amd64, arm64)
+   - GHCR에 이미지 푸시 (latest, 버전별 태그)
+   - GitHub Release에 Docker 정보 자동 추가
+5. **Release workflow가 병렬로 실행**:
+   - 프로덕션 빌드 아티팩트 생성 (.tar.gz, .zip)
+   - NPM 배포 (설정된 경우)
+
+모든 과정이 완전 자동화되어 있어 수동 작업이 필요 없습니다!
 
 ## 테스트 시나리오
 

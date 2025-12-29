@@ -204,12 +204,13 @@ gh run list --workflow=release.yml
 - [ ] `package.json`의 version이 자동 업데이트됨
 - [ ] `.release-please-manifest.json`이 업데이트됨
 - [ ] CHANGELOG.md가 생성되거나 업데이트됨
-- [ ] `REACT_APP_VERSION` 환경 변수로 버전 주입
-- [ ] 프로덕션 빌드 성공 (`NODE_ENV=production`)
-- [ ] 빌드 결과물 압축 (.tar.gz, .zip)
-- [ ] GitHub Release에 압축 파일 업로드
-- [ ] Git tag (v0.1.0) 생성
-- [ ] Docker 이미지 빌드 및 GHCR 푸시 성공
+- [ ] Git tag 생성 및 GitHub Release 생성
+- [ ] **release-please workflow에서 Docker 이미지 자동 빌드 시작**
+- [ ] Node.js 의존성 설치 및 프로덕션 빌드 성공
+- [ ] Docker 이미지 빌드 성공 (멀티 플랫폼)
+- [ ] GHCR에 이미지 푸시 성공
+- [ ] GitHub Release에 Docker 이미지 정보 자동 추가
+- [ ] release.yml workflow가 실행되어 빌드 아티팩트 생성
 
 ---
 
@@ -291,13 +292,13 @@ docker stop test-app
 docker rm test-app
 ```
 
-**GHCR 푸시 테스트** (Release 시 자동 실행):
+**GHCR 푸시 테스트** (Release Please workflow에서 자동 실행):
 
 ```bash
 # 1. Release 생성 (위의 시나리오 3 참조)
 
-# 2. Docker workflow 실행 확인
-gh run list --workflow=release.yml
+# 2. Release Please workflow 내 Docker 빌드 확인
+gh run list --workflow=release-please.yml
 
 # 3. Workflow 상세 로그 확인
 gh run view [RUN_ID]
