@@ -1,0 +1,141 @@
+name: Node.js PR Build & Test
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Node 버전 설정: .nvmrc 파일에서 읽기
+      - name: Read Node version
+        id: node_version
+        run: |
+          if [ -f ".nvmrc" ]; then
+            NODE_VERSION=$(cat .nvmrc)
+            echo "Node version from .nvmrc: $NODE_VERSION"
+          else
+            NODE_VERSION="20"
+            echo "Using default Node version: $NODE_VERSION"
+          fi
+          echo "version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node_version.outputs.version }}
+          cache: 'npm'
+
+      # 의존성 설치
+      - name: Install dependencies
+        run: npm ci
+
+      # 린팅 (ESLint가 설정되어 있는 경우)
+      - name: Check if ESLint is configured
+        id: eslint_check
+        run: |
+          if npm run | grep -q "lint"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run ESLint
+        if: steps.eslint_check.outputs.exists == 'true'
+        run: npm run lint
+        continue-on-error: false
+
+      # 타입 체크 (TypeScript 프로젝트인 경우)
+      - name: Check if TypeScript is configured
+        id: typescript_check
+        run: |
+          if [ -f "tsconfig.json" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run TypeScript type check
+        if: steps.typescript_check.outputs.exists == 'true'
+        run: |
+          if npm run | grep -q "type-check"; then
+            npm run type-check
+          else
+            npx tsc --noEmit
+          fi
+        continue-on-error: false
+
+      # 테스트 실행 (test 스크립트가 있는 경우)
+      - name: Check if tests are configured
+        id: test_check
+        run: |
+          if npm run | grep -q "test"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests
+        if: steps.test_check.outputs.exists == 'true'
+        run: npm test -- --coverage
+        env:
+          CI: true
+
+      # 커버리지 업로드
+      - name: Upload coverage
+        if: steps.test_check.outputs.exists == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+
+      # 빌드
+      - name: Build project
+        run: npm run build
+        env:
+          CI: true
+          NODE_ENV: production
+
+      # 빌드 결과물 확인
+      - name: Check build output
+        run: |
+          if [ -d "build" ]; then
+            echo "Build directory: build/"
+            ls -lh build/
+          elif [ -d "dist" ]; then
+            echo "Build directory: dist/"
+            ls -lh dist/
+          else
+            echo "Build directory not found"
+          fi
+
+      # 빌드 결과물 업로드
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ github.event.pull_request.number }}
+          path: |
+            build/
+            dist/
+
+      # Docker 이미지 빌드 검증 (Dockerfile이 있는 경우)
+      - name: Check if Dockerfile exists
+        id: dockerfile_check
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify Docker build
+        if: steps.dockerfile_check.outputs.exists == 'true'
+        run: docker build -t app:pr-${{ github.event.pull_request.number }} .

@@ -1,0 +1,154 @@
+name: Node.js Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Node 버전 설정
+      - name: Read Node version
+        id: node_version
+        run: |
+          if [ -f ".nvmrc" ]; then
+            NODE_VERSION=$(cat .nvmrc)
+            echo "Node version from .nvmrc: $NODE_VERSION"
+          else
+            NODE_VERSION="20"
+            echo "Using default Node version: $NODE_VERSION"
+          fi
+          echo "version=$NODE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node_version.outputs.version }}
+          cache: 'npm'
+
+      # package.json에서 버전 추출
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version from package.json: $VERSION"
+
+      # Git tag와 버전 일치 확인 (선택사항)
+      - name: Verify version matches tag
+        if: github.event_name == 'release'
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PACKAGE_VERSION=${{ steps.version.outputs.version }}
+
+          if [ "$TAG_VERSION" != "$PACKAGE_VERSION" ]; then
+            echo "⚠️ Warning: Git tag version ($TAG_VERSION) differs from package.json version ($PACKAGE_VERSION)"
+            echo "Using package.json version: $PACKAGE_VERSION"
+          fi
+
+      # 의존성 설치
+      - name: Install dependencies
+        run: npm ci
+
+      # 테스트 실행 (릴리즈 전 최종 검증)
+      - name: Run tests
+        run: |
+          if npm run | grep -q "test"; then
+            npm test
+          else
+            echo "No test script found, skipping tests"
+          fi
+        env:
+          CI: true
+
+      # 프로덕션 빌드
+      - name: Build project
+        run: npm run build
+        env:
+          CI: true
+          NODE_ENV: production
+          REACT_APP_VERSION: ${{ steps.version.outputs.version }}
+
+      # 빌드 결과물 확인
+      - name: List build artifacts
+        run: |
+          if [ -d "build" ]; then
+            echo "Build directory: build/"
+            ls -lh build/
+            BUILD_DIR="build"
+          elif [ -d "dist" ]; then
+            echo "Build directory: dist/"
+            ls -lh dist/
+            BUILD_DIR="dist"
+          else
+            echo "⚠️ Warning: Build directory not found"
+            BUILD_DIR=""
+          fi
+          echo "BUILD_DIR=$BUILD_DIR" >> $GITHUB_ENV
+
+      # 빌드 결과물 압축
+      - name: Archive build artifacts
+        if: env.BUILD_DIR != ''
+        run: |
+          APP_NAME=$(node -p "require('./package.json').name")
+          VERSION=${{ steps.version.outputs.version }}
+          tar -czf ${APP_NAME}-v${VERSION}.tar.gz ${BUILD_DIR}
+          zip -r ${APP_NAME}-v${VERSION}.zip ${BUILD_DIR}
+          echo "APP_NAME=${APP_NAME}" >> $GITHUB_ENV
+
+      # Release에 빌드 결과물 업로드
+      - name: Upload release assets
+        if: github.event_name == 'release' && env.BUILD_DIR != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            *.tar.gz
+            *.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Artifact 업로드 (workflow_dispatch 실행 시)
+      - name: Upload artifacts
+        if: github.event_name == 'workflow_dispatch' && env.BUILD_DIR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-${{ steps.version.outputs.version }}
+          path: |
+            *.tar.gz
+            *.zip
+
+      # NPM 배포 (선택사항 - NPM_TOKEN secret이 설정되고 라이브러리인 경우)
+      - name: Check if NPM token exists and package is publishable
+        id: npm_check
+        run: |
+          if [ -n "${{ secrets.NPM_TOKEN }}" ] && [ "$(node -p "require('./package.json').private || false")" = "false" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to NPM
+        if: github.event_name == 'release' && steps.npm_check.outputs.exists == 'true'
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # 배포 완료 메시지
+      - name: Output release info
+        run: |
+          echo "✅ Release ${{ steps.version.outputs.version }} 완료!"
+          if [ -n "$BUILD_DIR" ]; then
+            echo "Build artifacts:"
+            ls -lh *.tar.gz *.zip 2>/dev/null || echo "No archive files found"
+          fi
