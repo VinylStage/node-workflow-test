@@ -1,6 +1,6 @@
 {
   "name": "node-test-project",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": false,
   "description": "Node.js React workflow 테스트 프로젝트",
   "scripts": {
