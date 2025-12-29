@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/VinylStage/node-workflow-test/compare/node-test-project-v0.2.0...node-test-project-v0.3.0) (2025-12-29)
+
+
+### ✨ Features
+
+* integrate Docker build into release-please workflow ([94cfd41](https://github.com/VinylStage/node-workflow-test/commit/94cfd41a79d61f77fdc64879985cd94b35e75386))
+
 ## [0.2.0](https://github.com/VinylStage/node-workflow-test/compare/node-test-project-v0.1.0...node-test-project-v0.2.0) (2025-12-29)
 
 
