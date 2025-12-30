@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.0](https://github.com/VinylStage/node-workflow-test/compare/node-test-project-v0.3.1...node-test-project-v1.0.0) (2025-12-30)
+
+
+### 🧹 Chores
+
+* release 1.0.0 ([877e05c](https://github.com/VinylStage/node-workflow-test/commit/877e05cca92dca84ad7cc3701256e4648c12ba06))
+
 ## [0.3.1](https://github.com/VinylStage/node-workflow-test/compare/node-test-project-v0.3.0...node-test-project-v0.3.1) (2025-12-29)
 
 
